@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project 3: Forward Kinematics · Harry Fang</title>
+<meta name="description" content="EECS 367 Project 3: a URDF robot driven through an FSM choreography by my own forward-kinematics runtime, drawn in three.js from /xform_world.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="../style.css">
+</head>
+<body>
+<div class="page">
+  <header class="site-head">
+    <a href="../">Harry Fang · EECS 367 Portfolio</a>
+    <nav aria-label="Projects"><a href="./" aria-current="page">Project 3 · FK</a></nav>
+  </header>
+
+  <main>
+    <p class="eyebrow">EECS 367 · Project 3 · Forward Kinematics</p>
+    <h1>p3_dancer dances a 15-state choreography</h1>
+    <p class="lede">A wheeled humanoid I described in URDF, moved by a finite state machine and a joint servo,
+      posed by my own forward-kinematics runtime, and drawn in the browser one link at a time from
+      <code>/xform_world</code>.</p>
+
+    <figure class="video-band" style="margin-inline:0">
+      <video controls playsinline preload="metadata" poster="poster.jpg" aria-label="p3_dancer performing the dancer_routine choreography">
+        <source src="p3_dancer_fsm.mp4" type="video/mp4">
+        Your browser cannot play this video. <a href="p3_dancer_fsm.mp4">Download the MP4</a>.
+      </video>
+    </figure>
+    <p class="caption">One full loop of <code>dancer_routine</code> (22.5 s, 1920×1080), recorded from my viewer while
+      <code>make demo</code> ran. The pink line is the trail of the right hand.
+      <a href="p3_dancer_fsm.mp4">Open the video file</a>.</p>
+
+    <div class="col">
+      <h2>The robot</h2>
+      <p><code>p3_dancer</code> is a robot I wrote for this project: about 1.2 m tall, built only from primitive
+        visuals (boxes, cylinders and spheres with URDF material colours), so any viewer can draw it without mesh files.
+        It stands on a wheeled base, lifts its torso, turns at the waist, and has a head, an antenna and two arms (shoulder, elbow, wrist)
+        ending in two-finger grippers.</p>
+    </div>
+    <div class="facts">
+      <div><b>36</b><span>links</span></div>
+      <div><b>19</b><span>movable joints</span></div>
+      <div><b>11 / 5 / 3</b><span>revolute / prismatic / continuous</span></div>
+      <div><b>16</b><span>fixed joints</span></div>
+      <div><b>15 · 12 · 9</b><span>box · cylinder · sphere visuals</span></div>
+    </div>
+    <div class="col">
+      <p>I also used the robot to exercise the parts of the URDF spec that are easy to get wrong:</p>
+      <ul class="plain">
+        <li><code>base_link</code> is the root but not the first <code>&lt;link&gt;</code> in the file, so the root has to be found from the joints.</li>
+        <li>The head-pan axis is written <code>0 0 2</code> and must be normalized for a rotation.</li>
+        <li>The gripper fingers are prismatic with axis <code>±0.25 0 0</code>, which is deliberately not unit: a prismatic joint slides
+          <code>q · axis</code> exactly as written.</li>
+        <li>The wheels get their tilt from an <code>rpy</code> origin, and the waist is a continuous joint that can turn a full 2π.</li>
+      </ul>
+
+      <h2>The choreography</h2>
+      <p><code>dancer_routine</code> is a finite state machine with 15 states. Each state is a joint-space setpoint for all 19 movable joints.
+        When the state is entered, the FSM publishes that setpoint on <code>/joint_trajectory</code>. When <code>/joint_states</code> shows
+        every joint within the state's tolerance (ε = 0.03) and the state's hold time has passed, the FSM fires the state's
+        <code>on_arrival</code> transition. The last state leads back to <code>home</code>, so the dance loops.
+        With the servo set to gain 4 /s and a 3 rad/s speed cap, one loop takes about 19 s.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>State</th><th>Hold</th><th>What the robot does</th></tr></thead>
+        <tbody>
+          <tr><td class="n">1</td><td class="s">home</td><td class="h">0.6 s</td><td>Neutral stance, elbows slightly bent.</td></tr>
+          <tr><td class="n">2</td><td class="s">wave_ready</td><td class="h">–</td><td>Right arm goes out and up (shoulder pitch and roll to 90°); the torso rises and the head turns toward the hand.</td></tr>
+          <tr><td class="n">3</td><td class="s">wave_out</td><td class="h">–</td><td>Forearm swings out (elbow 0.7 rad), wrist rolls, gripper opens, antenna wobbles.</td></tr>
+          <tr><td class="n">4</td><td class="s">wave_in</td><td class="h">–</td><td>Forearm swings back in (elbow 1.8 rad), wrist rolls the other way.</td></tr>
+          <tr><td class="n">5</td><td class="s">wave_out_2</td><td class="h">–</td><td>Second wave out.</td></tr>
+          <tr><td class="n">6</td><td class="s">arms_up</td><td class="h">0.5 s</td><td>Both arms up in a V, torso at its highest (0.19 m), both grippers open.</td></tr>
+          <tr><td class="n">7</td><td class="s">twist_left</td><td class="h">0.2 s</td><td>Waist turns +0.9 rad; the arms swing opposite and the head counter-turns.</td></tr>
+          <tr><td class="n">8</td><td class="s">twist_right</td><td class="h">0.2 s</td><td>The mirror image: waist −0.9 rad.</td></tr>
+          <tr><td class="n">9</td><td class="s">head_bob_down</td><td class="h">–</td><td>Head nods down and both elbows fold.</td></tr>
+          <tr><td class="n">10</td><td class="s">head_bob_up</td><td class="h">–</td><td>Head comes back up and the torso rises again.</td></tr>
+          <tr><td class="n">11</td><td class="s">clap_open</td><td class="h">0.15 s</td><td>Both arms straight forward, wrists rolled 90°, grippers open.</td></tr>
+          <tr><td class="n">12</td><td class="s">clap_shut</td><td class="h">0.3 s</td><td>Grippers snap shut.</td></tr>
+          <tr><td class="n">13</td><td class="s">spin</td><td class="h">0.2 s</td><td>Waist and both wheels turn to 2π: one full spin with the arms out.</td></tr>
+          <tr><td class="n">14</td><td class="s">spin_back</td><td class="h">–</td><td>Waist and wheels unwind back to 0.</td></tr>
+          <tr><td class="n">15</td><td class="s">bow</td><td class="h">0.8 s</td><td>Head down, arms forward: a bow.</td></tr>
+          <tr class="loop"><td class="n">↺</td><td class="s">home</td><td class="h"></td><td>Back to the start; the loop repeats.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col">
+      <h2>How it runs</h2>
+      <p>The runtime is written in Python on top of my Project 1 publish/subscribe middleware and its rosbridge-style TCP/JSON gateway.
+        <code>make demo</code> starts five nodes in one process. They talk only through the pub/sub hub, the same way they would over a network.</p>
+    </div>
+    <div class="diagram" role="img" aria-label="Node graph: finite_state_machine publishes /joint_trajectory to joint_state_publisher, which publishes /joint_states to robot_state_publisher, which publishes /tf to robot_world_state_publisher, which publishes /xform_world through the gateway to viewer_server.py and the three.js page. param_server supplies robot_description.">
+      <svg viewBox="0 0 1160 360" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="head" d="M0 0 L10 5 L0 10 z"/>
+          </marker>
+        </defs>
+        <rect x="2" y="10" width="1156" height="248" rx="10" fill="none" stroke="var(--line)" stroke-dasharray="6 4"/>
+        <text class="small" x="16" y="248">make demo · one Python process · nodes talk only through my Project 1 pub/sub hub</text>
+
+        <rect class="box" x="10" y="40" width="180" height="52" rx="6"/>
+        <text x="22" y="62">finite_state_machine</text><text class="small" x="22" y="80">15-state choreography</text>
+        <rect class="box" x="300" y="40" width="180" height="52" rx="6"/>
+        <text x="312" y="62">joint_state_publisher</text><text class="small" x="312" y="80">P servo toward setpoint</text>
+        <rect class="box hot" x="590" y="40" width="180" height="52" rx="6"/>
+        <text x="602" y="62">robot_state_publisher</text><text class="small" x="602" y="80">one transform per joint</text>
+        <rect class="box hot" x="880" y="40" width="250" height="52" rx="6"/>
+        <text x="892" y="62">robot_world_state_publisher</text><text class="small" x="892" y="80">composes world poses</text>
+
+        <path class="wire" d="M190 66 H298" marker-end="url(#arrow)"/><text class="lbl" x="245" y="58" text-anchor="middle">/joint_trajectory</text>
+        <path class="wire" d="M480 66 H588" marker-end="url(#arrow)"/><text class="lbl" x="535" y="58" text-anchor="middle">/joint_states</text>
+        <path class="wire" d="M770 66 H878" marker-end="url(#arrow)"/><text class="lbl" x="825" y="58" text-anchor="middle">/tf</text>
+
+        <rect class="box" x="10" y="170" width="180" height="52" rx="6"/>
+        <text x="22" y="192">param_server</text><text class="small" x="22" y="210">holds robot_description</text>
+        <path class="wire" d="M100 170 V126 H960" stroke-dasharray="4 3"/>
+        <path class="wire" d="M390 126 V94" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <path class="wire" d="M680 126 V94" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <path class="wire" d="M960 126 V94" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+        <text class="small" x="114" y="120">robot_description (URDF text)</text>
+
+        <rect class="box" x="880" y="170" width="250" height="52" rx="6"/>
+        <text x="892" y="192">rosbridge gateway</text><text class="small" x="892" y="210">TCP/JSON · 127.0.0.1:9095</text>
+        <path class="wire" d="M1080 92 V168" marker-end="url(#arrow)"/><text class="lbl" x="1072" y="140" text-anchor="end">/xform_world</text>
+
+        <rect class="box ext" x="880" y="290" width="250" height="52" rx="6"/>
+        <text x="892" y="312">viewer_server.py</text><text class="small" x="892" y="330">external rosbridge client</text>
+        <rect class="box ext" x="590" y="290" width="250" height="52" rx="6"/>
+        <text x="602" y="312">three.js page</text><text class="small" x="602" y="330">one THREE.Group per link</text>
+        <path class="wire" d="M1000 222 V288" marker-end="url(#arrow)"/><text class="lbl" x="1008" y="268">TCP/JSON</text>
+        <path class="wire" d="M880 316 H842" marker-end="url(#arrow)"/><text class="lbl" x="861" y="308" text-anchor="middle">SSE</text>
+      </svg>
+    </div>
+    <div class="col">
+      <ul class="plain">
+        <li><b>finite_state_machine</b> loads the choreography from <code>fsm/dancer_routine.json</code> and publishes each state's setpoint.</li>
+        <li><b>joint_state_publisher</b> moves every joint toward its setpoint with a proportional servo (velocity = gain × error, capped,
+          never overshooting, clamped to the joint limits) and publishes <code>/joint_states</code>.</li>
+        <li><b>robot_state_publisher</b> computes one transform per joint, T = T<sub>origin</sub>(xyz, rpy) · T<sub>motion</sub>(q), and publishes them on <code>/tf</code>.
+          Revolute and continuous joints rotate about the normalized axis; prismatic joints slide along the axis as written.</li>
+        <li><b>robot_world_state_publisher</b> walks the tree from the root, composes T<sub>world,child</sub> = T<sub>world,parent</sub> · T<sub>joint</sub>,
+          and publishes every link's 4×4 pose on <code>/xform_world</code> as 16 column-major numbers.</li>
+      </ul>
+      <p>The URDF parser, the quaternion and 4×4 matrix math, and the tree traversal are all my own code. As the project requires,
+        no kinematics, transform or URDF-model library is used; the only borrowed piece is Python's standard-library XML parser.</p>
+
+      <h2>How I drew it</h2>
+      <p>The course supplies no viewer, so I built one as an external client of the runtime. A browser cannot open a raw TCP socket,
+        so a small bridge, <code>viewer_server.py</code> (Python standard library only), connects to the gateway on port 9095 like any
+        other rosbridge client. It subscribes to <code>/xform_world</code>, <code>/tf</code>, <code>/joint_states</code>,
+        <code>/global_pose</code> and <code>/fsm/status</code>, and streams them to the page with server-sent events.</p>
+      <p>The page uses three.js. Each link is a <code>THREE.Group</code> with <code>matrixAutoUpdate = false</code>. On every
+        <code>/xform_world</code> message the page copies the runtime's numbers straight in:</p>
+      <pre class="code">group.matrix.fromArray(entry.matrix);   // 16 column-major numbers, used as published</pre>
+      <p>The viewer never corrects a matrix, so any FK mistake would show up on screen. Inside each group, the link's first
+        <code>&lt;visual&gt;</code> is drawn at its visual origin with its URDF colour. Boxes and spheres are drawn as written;
+        cylinders are turned 90° about x, because three.js cylinders run along +y and URDF cylinders along +z. The camera uses
+        z-up to match URDF.</p>
+      <p>The viewer also has an independent FK self-check, a per-joint slider panel and FSM controls. To make the video I ran
+        <code>make demo</code>, loaded the robot and the choreography with my <code>tools/demo.py</code> script, and recorded the
+        3D canvas with the page's Record button (<code>canvas.captureStream</code> and <code>MediaRecorder</code>). I added the caption with ffmpeg.</p>
+    </div>
+  </main>
+
+  <footer class="site-foot">
+    Harry Fang · EECS 367 Autonomous Robotics, University of Michigan, Fall 2026.
+    The p3_dancer robot and the dancer_routine choreography are my own; the Fetch robot does not appear on this page.
+  </footer>
+</div>
+</body>
+</html>
